@@ -1,4 +1,4 @@
-import os
+# old postprocess, do not work anymore
 import cv2
 
 from rknn.api import RKNN
@@ -133,11 +133,11 @@ def convert(model_path = 'yolov8n.onnx'):
     return rknn
 
 if __name__ == '__main__':
-    rknn = convert()
+    rknn = convert('../data/yolov8n.onnx')
     
-    imglist = ['bus.jpg']
+    imglist = ['../data/bus.jpg']
 
-    origin_img = cv2.imread('bus.jpg')
+    origin_img = cv2.imread('../data/bus.jpg')
     origin_img_rz = cv2.resize(origin_img, IMG_SIZE)
     img_height, img_width = origin_img.shape[:2]
     img = cv2.cvtColor(origin_img, cv2.COLOR_BGR2RGB)
@@ -146,9 +146,9 @@ if __name__ == '__main__':
     image_data = np.transpose(image_data, (0, 1, 2))
     image_data = np.expand_dims(image_data, axis = 0).astype(np.float16)
     
-    ret = rknn.load_rknn(path = 'yolov8n.rknn')
+    ret = rknn.load_rknn(path = '../data/yolov8n.rknn')
     ret = rknn.init_runtime(target = None, eval_mem = False, perf_debug = False)
-    print(rknn.get_sdk_version())
+    # print(rknn.get_sdk_version())
     outputs = rknn.inference(inputs = [img])#, data_format = 'nchw')  
     output = np.concatenate((outputs[0], outputs[1]), axis = 1)
     boxes, classes, scores = post_process(output)

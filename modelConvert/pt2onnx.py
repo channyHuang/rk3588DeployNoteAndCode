@@ -3,7 +3,7 @@
 # Using ultralytics to convert pt model 
 from ultralytics import YOLO
 
-def pt2onnx(path = 'yolov8n.pt'):
+def pt2onnx(path = '../data/yolov8n.pt'):
     model = YOLO(path)
     res = model.export(format="onnx", opset = 19, simplify = True)  # export the model to ONNX format
 
