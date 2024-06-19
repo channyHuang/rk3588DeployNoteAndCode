@@ -46,7 +46,7 @@ int init_yolov8_model(const char *model_path, rknn_app_context_t *app_ctx)
         return -1;
     }
 
-    ret = rknn_init(&ctx, model, model_len, 0, NULL);
+    ret = rknn_init(&ctx, model, model_len, RKNN_FLAG_COLLECT_PERF_MASK, NULL);
     free(model);
     if (ret < 0)
     {

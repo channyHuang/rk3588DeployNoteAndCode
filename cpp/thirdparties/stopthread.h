@@ -29,6 +29,13 @@ public:
         mThread.detach();
     }
 
+    void join() {
+        mThread = std::thread([this]() {
+            this->threadLoop(this->mExitSignal.get_future());
+        });
+        mThread.join();
+    }
+
     void stop() {
         mExitSignal.set_value();
     }
