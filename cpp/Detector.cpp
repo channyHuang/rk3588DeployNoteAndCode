@@ -109,11 +109,12 @@ stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
         stResult.boxes[(i << 2) + 3] = det_result->box.bottom;
         stResult.prob[i] = det_result->prop;
     }
+    // write_image("out.png", &src_image);
 
     if (stResult.pFrame == nullptr) {
-        stResult.pFrame = new char[src_image.size];
+        stResult.pFrame = new unsigned char[src_image.size];
     }
-    memcpy(stResult.pFrame, src_image.virt_addr, src_image.size);
+    memcpy(stResult.pFrame, src_image.virt_addr, src_image.size * sizeof(unsigned char));
 
     // performance
     rknn_perf_detail perf_detail;

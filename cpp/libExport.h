@@ -30,7 +30,7 @@
 #endif
 
 typedef struct stDetectResult {
-    char* pFrame = nullptr;
+    unsigned char* pFrame = nullptr;
     int nDetectNum = 0;
     int* classes = nullptr;
     int* boxes = nullptr;
