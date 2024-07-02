@@ -42,10 +42,20 @@ set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib")
 
 file(GLOB SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.cc)
 
-add_executable(${PROJECT_NAME}
-    # main.cc
+# add_executable(${PROJECT_NAME} 
+#     # main.cc
+#     ./thirdparties/stopthread.h
+#     mainThread.cpp
+#     postprocess.cc
+#     ${rknpu_yolov8_file}
+# )
+
+add_library(${PROJECT_NAME} SHARED #STATIC
     ./thirdparties/stopthread.h
-    mainThread.cpp
+    Detector.cpp
+    Detector.h
+    libExport.cpp
+    libExport.h
 
     postprocess.cc
     ${rknpu_yolov8_file}

@@ -4,18 +4,18 @@
 #include <future>
 #include <thread>
 
-int getDateTime(char * psDate){
-    time_t nSeconds;
-    struct tm *pTM;
+// int getDateTime(char * psDate){
+//     time_t nSeconds;
+//     struct tm *pTM;
     
-    time(&nSeconds);
-    pTM = localtime(&nSeconds);
-    // "%Y-%m-%d %H:%M:%S"
-    sprintf(psDate,"%04d-%02d-%02d %02d:%02d:%02d", 
-            pTM->tm_year + 1900, pTM->tm_mon + 1, pTM->tm_mday,
-            pTM->tm_hour, pTM->tm_min, pTM->tm_sec);
-    return 0;
-}
+//     time(&nSeconds);
+//     pTM = localtime(&nSeconds);
+//     // "%Y-%m-%d %H:%M:%S"
+//     sprintf(psDate,"%04d-%02d-%02d %02d:%02d:%02d", 
+//             pTM->tm_year + 1900, pTM->tm_mon + 1, pTM->tm_mday,
+//             pTM->tm_hour, pTM->tm_min, pTM->tm_sec);
+//     return 0;
+// }
 
 class StopThread {
 public:
