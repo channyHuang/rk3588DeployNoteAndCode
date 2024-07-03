@@ -1,7 +1,10 @@
 #include <iostream>
+#include <fstream>
 #include <experimental/filesystem>
 #include <cstring>
 #include <chrono>
+#include <queue>
+#include <mutex>
 
 namespace fs = std::experimental::filesystem;
 
@@ -47,10 +50,18 @@ private:
 
     stDetectResult stResult;
     CBFun_Callback m_pCallback = nullptr;
-    void* m_pUser;
+    void* m_pUser = nullptr;
+    bool m_bRunning = false;
+
+    std::queue<image_buffer_t> input_images;
+    std::queue<image_buffer_t> output_images;
+    std::mutex mutex;
 
 private:
     Detector();
     void release();
+    bool copyImageData(char* pChar, int nWidth, int nHeight, image_buffer_t& image);
+    void writeLog(const std::string& sMsg);
+
     virtual void threadLoop(std::future<void> exitListener);
 };

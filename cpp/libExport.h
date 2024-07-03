@@ -32,9 +32,11 @@
 typedef struct stDetectResult {
     unsigned char* pFrame = nullptr;
     int nDetectNum = 0;
-    int* classes = nullptr;
-    int* boxes = nullptr;
-    float* prob = nullptr;
+    int nWidth = 0;
+    int nHeight = 0;
+    int* pClasses = nullptr;
+    int* pBoxes = nullptr;
+    float* pProb = nullptr;
 };
 
 D_EXTERN_C D_SHARE_EXPORT void Log(const char* pString);
@@ -43,7 +45,7 @@ D_EXTERN_C D_SHARE_EXPORT bool Deinit();
 D_EXTERN_C D_SHARE_EXPORT stDetectResult* Detect(char* pChar, int nWidth, int nHeight);
 D_EXTERN_C D_SHARE_EXPORT void DetectAsync(char* pChar, int nWidth, int nHeight);
 
-typedef void (__stdcall *CBFun_Callback)(std::string sMsg, int nSeq, void* pUser);
+typedef void (__stdcall *CBFun_Callback)(stDetectResult* stResult, void* pUser);
 D_EXTERN_C D_SHARE_EXPORT void SetCallback(CBFun_Callback pFunc, void *pUser);
 
 

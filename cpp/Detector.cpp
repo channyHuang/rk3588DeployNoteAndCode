@@ -44,29 +44,38 @@ bool Detector::deinit() {
 void resetStDetectResult(stDetectResult &result) {
     if (result.nDetectNum == 0) return;
     result.nDetectNum = 0;
-    delete []result.boxes;
-    delete []result.prob;
-    delete []result.classes;
+    delete []result.pBoxes;
+    delete []result.pProb;
+    delete []result.pClasses;
 }
 
-stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
+bool Detector::copyImageData(char* pChar, int nWidth, int nHeight, image_buffer_t& image) {
     int sw_out_size = nWidth * nHeight * 3;
-    unsigned char* sw_out_buf = src_image.virt_addr;
+    unsigned char* sw_out_buf = image.virt_addr;
     if (sw_out_buf == NULL) {
         sw_out_buf = (unsigned char*)malloc(sw_out_size * sizeof(unsigned char));
     }
     if (sw_out_buf == NULL) {
         printf("sw_out_buf is NULL\n");
-        return &stResult;
+        return false;
     }
 
     memcpy(sw_out_buf, pChar, sw_out_size);
 
-    src_image.width = nWidth;
-    src_image.height = nHeight;
-    src_image.size = sw_out_size;
-    src_image.format = IMAGE_FORMAT_RGB888;
-    src_image.virt_addr = sw_out_buf;
+    image.width = nWidth;
+    image.height = nHeight;
+    image.size = sw_out_size;
+    image.format = IMAGE_FORMAT_RGB888;
+    image.virt_addr = sw_out_buf;
+
+    return true;
+}
+
+stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
+    bool suc = copyImageData(pChar, nWidth, nHeight, src_image);
+    if (!suc) {
+        return &stResult;
+    }
 
     ret = inference_yolov8_model(&rknn_app_ctx, &src_image, &od_results);
     if (ret != 0)
@@ -78,9 +87,9 @@ stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
     resetStDetectResult(stResult);
     if (od_results.count > 0) {
         stResult.nDetectNum = od_results.count;
-        stResult.classes = new int[od_results.count];
-        stResult.boxes = new int[od_results.count * 4];
-        stResult.prob = new float[od_results.count];
+        stResult.pClasses = new int[od_results.count];
+        stResult.pBoxes = new int[od_results.count * 4];
+        stResult.pProb = new float[od_results.count];
     }
     printf("draw \n");
     // 画框和概率
@@ -102,12 +111,12 @@ stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
         sprintf(text, "%s %.1f%%", coco_cls_to_name(det_result->cls_id), det_result->prop * 100);
         draw_text(&src_image, text, x1, y1 - 20, COLOR_RED, 10);
 
-        stResult.classes[i] = det_result->cls_id;
-        stResult.boxes[(i << 2)] = det_result->box.left;
-        stResult.boxes[(i << 2) + 1] = det_result->box.top;
-        stResult.boxes[(i << 2) + 2] = det_result->box.right;
-        stResult.boxes[(i << 2) + 3] = det_result->box.bottom;
-        stResult.prob[i] = det_result->prop;
+        stResult.pClasses[i] = det_result->cls_id;
+        stResult.pBoxes[(i << 2)] = det_result->box.left;
+        stResult.pBoxes[(i << 2) + 1] = det_result->box.top;
+        stResult.pBoxes[(i << 2) + 2] = det_result->box.right;
+        stResult.pBoxes[(i << 2) + 3] = det_result->box.bottom;
+        stResult.pProb[i] = det_result->prop;
     }
     // write_image("out.png", &src_image);
 
@@ -127,10 +136,30 @@ stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
 void Detector::setCallback(CBFun_Callback pFunc, void* pUser) {
     m_pCallback = pFunc;
     m_pUser = pUser;
+    if (pFunc == nullptr && m_bRunning) {
+        stop();
+        m_bRunning = false;
+    } else if (pFunc != nullptr && !m_bRunning) {
+        run();
+        m_bRunning = true;
+    }
+    writeLog(pFunc == nullptr ? "setCallback pFunc is nullptr" : "setCallback");
 }
 
 void Detector::detectAsync(char* pChar, int nWidth, int nHeight) {
-
+    if (output_images.empty()) {
+        image_buffer_t image;
+        memset(&image, 0, sizeof(image_buffer_t));
+        copyImageData(pChar, nWidth, nHeight, image);
+        std::lock_guard<std::mutex> locker(mutex);
+        input_images.push(image);
+    } else {
+        image_buffer_t& image = output_images.front();
+        output_images.pop();
+        copyImageData(pChar, nWidth, nHeight, image);
+        std::lock_guard<std::mutex> locker(mutex);
+        input_images.push(image);
+    }
 }
 
 void Detector::release() {
@@ -149,5 +178,79 @@ void Detector::release() {
 
 void Detector::threadLoop(std::future<void> exitListener) {
     do {
+        image_buffer_t image;
+        {
+            std::lock_guard<std::mutex> locker(mutex);
+            if (input_images.empty()) {
+                continue;
+            }
+            image = input_images.front();
+            input_images.pop();
+        }
+        writeLog("threadLoop ");
+
+        ret = inference_yolov8_model(&rknn_app_ctx, &image, &od_results);
+        if (ret != 0)
+        {
+            printf("inference_yolov8_model fail! ret=%d\n", ret);
+            continue;
+        }
+        printf("resetStDetectResult \n");
+        resetStDetectResult(stResult);
+        if (od_results.count > 0) {
+            stResult.nDetectNum = od_results.count;
+            stResult.pClasses = new int[od_results.count];
+            stResult.pBoxes = new int[od_results.count * 4];
+            stResult.pProb = new float[od_results.count];
+        }
+        
+        // 画框和概率
+        char text[256];
+        for (int i = 0; i < od_results.count; i++)
+        {
+            object_detect_result *det_result = &(od_results.results[i]);
+            printf("%s @ (%d %d %d %d) %.3f\n", coco_cls_to_name(det_result->cls_id),
+                det_result->box.left, det_result->box.top,
+                det_result->box.right, det_result->box.bottom,
+                det_result->prop);
+            int x1 = det_result->box.left;
+            int y1 = det_result->box.top;
+            int x2 = det_result->box.right;
+            int y2 = det_result->box.bottom;
+
+            draw_rectangle(&image, x1, y1, x2 - x1, y2 - y1, COLOR_BLUE, 3);
+
+            sprintf(text, "%s %.1f%%", coco_cls_to_name(det_result->cls_id), det_result->prop * 100);
+            draw_text(&image, text, x1, y1 - 20, COLOR_RED, 10);
+
+            stResult.pClasses[i] = det_result->cls_id;
+            stResult.pBoxes[(i << 2)] = det_result->box.left;
+            stResult.pBoxes[(i << 2) + 1] = det_result->box.top;
+            stResult.pBoxes[(i << 2) + 2] = det_result->box.right;
+            stResult.pBoxes[(i << 2) + 3] = det_result->box.bottom;
+            stResult.pProb[i] = det_result->prop;
+        }
+        
+        if (stResult.pFrame == nullptr) {
+            stResult.pFrame = new unsigned char[image.size];
+        }
+        memcpy(stResult.pFrame, image.virt_addr, image.size * sizeof(unsigned char));
+        stResult.nWidth = image.width;
+        stResult.nHeight = image.height;
+
+        // performance
+        // rknn_perf_detail perf_detail;
+        // ret = rknn_query(rknn_app_ctx.rknn_ctx, RKNN_QUERY_PERF_DETAIL, &perf_detail, sizeof(perf_detail));
+        // printf("---> %s\n", perf_detail.perf_data);  
+        
+        if (m_pCallback != nullptr) {
+            m_pCallback(&stResult, nullptr);
+        }
     } while (exitListener.wait_for(std::chrono::microseconds(1)) == std::future_status::timeout);
+}
+
+void Detector::writeLog(const std::string& sMsg) {
+    std::ofstream off("liblog.txt", std::ios::app);
+    off << sMsg << std::endl;
+    off.close();
 }
