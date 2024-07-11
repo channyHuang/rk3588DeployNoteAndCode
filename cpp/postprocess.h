@@ -9,9 +9,9 @@
 
 #define OBJ_NAME_MAX_SIZE 64
 #define OBJ_NUMB_MAX_SIZE 128
-#define OBJ_CLASS_NUM 80
+#define OBJ_CLASS_NUM 13
 #define NMS_THRESH 0.45
-#define BOX_THRESH 0.25
+#define BOX_THRESH 0.63
 
 // class rknn_app_context_t;
 

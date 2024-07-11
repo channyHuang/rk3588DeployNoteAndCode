@@ -182,7 +182,8 @@ int inference_yolov8_model(rknn_app_context_t *app_ctx, image_buffer_t *img, obj
     dst_img.height = app_ctx->model_height;
     dst_img.format = IMAGE_FORMAT_RGB888;
     dst_img.size = get_image_size(&dst_img);
-    dst_img.virt_addr = (unsigned char *)malloc(dst_img.size);
+    // dst_img.virt_addr = (unsigned char *)malloc(dst_img.size);
+    set_image_dma_buf_alloc(&dst_img);
     if (dst_img.virt_addr == NULL)
     {
         printf("malloc buffer size:%d fail!\n", dst_img.size);
@@ -212,14 +213,12 @@ int inference_yolov8_model(rknn_app_context_t *app_ctx, image_buffer_t *img, obj
     }
 
     // Run
-    printf("rknn_run\n");
     ret = rknn_run(app_ctx->rknn_ctx, nullptr);
     if (ret < 0)
     {
         printf("rknn_run fail! ret=%d\n", ret);
         return -1;
     }
-
     // Get Output
     memset(outputs, 0, sizeof(outputs));
     for (int i = 0; i < app_ctx->io_num.n_output; i++)
@@ -227,24 +226,23 @@ int inference_yolov8_model(rknn_app_context_t *app_ctx, image_buffer_t *img, obj
         outputs[i].index = i;
         outputs[i].want_float = (!app_ctx->is_quant);
     }
+    
     ret = rknn_outputs_get(app_ctx->rknn_ctx, app_ctx->io_num.n_output, outputs, NULL);
     if (ret < 0)
     {
         printf("rknn_outputs_get fail! ret=%d\n", ret);
         goto out;
     }
-
     // Post Process
     post_process(app_ctx, outputs, &letter_box, box_conf_threshold, nms_threshold, od_results);
-
     // Remeber to release rknn output
     rknn_outputs_release(app_ctx->rknn_ctx, app_ctx->io_num.n_output, outputs);
-
 out:
     if (dst_img.virt_addr != NULL)
     {
-        free(dst_img.virt_addr);
+        // free(dst_img.virt_addr);
+        image_dma_buf_free(&dst_img);
+        dst_img.virt_addr = NULL;
     }
-
     return ret;
 }

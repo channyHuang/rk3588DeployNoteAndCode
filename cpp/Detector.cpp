@@ -80,10 +80,9 @@ stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
     ret = inference_yolov8_model(&rknn_app_ctx, &src_image, &od_results);
     if (ret != 0)
     {
-        printf("init_yolov8_model fail! ret=%d\n", ret);
+        printf("inference_yolov8_model fail! ret=%d\n", ret);
         return &stResult;
     }
-    printf("resetStDetectResult \n");
     resetStDetectResult(stResult);
     if (od_results.count > 0) {
         stResult.nDetectNum = od_results.count;
@@ -91,16 +90,15 @@ stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
         stResult.pBoxes = new int[od_results.count * 4];
         stResult.pProb = new float[od_results.count];
     }
-    printf("draw \n");
     // 画框和概率
     char text[256];
     for (int i = 0; i < od_results.count; i++)
     {
         object_detect_result *det_result = &(od_results.results[i]);
-        printf("%s @ (%d %d %d %d) %.3f\n", coco_cls_to_name(det_result->cls_id),
-            det_result->box.left, det_result->box.top,
-            det_result->box.right, det_result->box.bottom,
-            det_result->prop);
+        // printf("%s @ (%d %d %d %d) %.3f\n", coco_cls_to_name(det_result->cls_id),
+        //     det_result->box.left, det_result->box.top,
+        //     det_result->box.right, det_result->box.bottom,
+        //     det_result->prop);
         int x1 = det_result->box.left;
         int y1 = det_result->box.top;
         int x2 = det_result->box.right;
@@ -124,11 +122,13 @@ stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
         stResult.pFrame = new unsigned char[src_image.size];
     }
     memcpy(stResult.pFrame, src_image.virt_addr, src_image.size * sizeof(unsigned char));
+    stResult.nWidth = src_image.width;
+    stResult.nHeight = src_image.height;
 
     // performance
-    rknn_perf_detail perf_detail;
-    ret = rknn_query(rknn_app_ctx.rknn_ctx, RKNN_QUERY_PERF_DETAIL, &perf_detail, sizeof(perf_detail));
-    printf("---> %s\n", perf_detail.perf_data);
+    // rknn_perf_detail perf_detail;
+    // ret = rknn_query(rknn_app_ctx.rknn_ctx, RKNN_QUERY_PERF_DETAIL, &perf_detail, sizeof(perf_detail));
+    // printf("---> %s\n", perf_detail.perf_data);
 
     return &stResult;
 }
@@ -152,12 +152,22 @@ void Detector::detectAsync(char* pChar, int nWidth, int nHeight) {
         memset(&image, 0, sizeof(image_buffer_t));
         copyImageData(pChar, nWidth, nHeight, image);
         std::lock_guard<std::mutex> locker(mutex);
+        while (!input_images.empty()) {
+            image_buffer_t &old_image = input_images.front();
+            input_images.pop();
+            output_images.push(old_image);
+        }
         input_images.push(image);
     } else {
         image_buffer_t& image = output_images.front();
         output_images.pop();
         copyImageData(pChar, nWidth, nHeight, image);
         std::lock_guard<std::mutex> locker(mutex);
+        while (!input_images.empty()) {
+            image_buffer_t &old_image = input_images.front();
+            input_images.pop();
+            output_images.push(old_image);
+        }
         input_images.push(image);
     }
 }
