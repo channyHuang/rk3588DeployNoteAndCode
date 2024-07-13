@@ -30,6 +30,10 @@ if (TARGET_SOC STREQUAL "rv1106" OR TARGET_SOC STREQUAL "rv1103")
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/allocator/dma)
 else()
 #dma
+### zero-copy
+# add_definitions(-DRV1106_1103)
+# set(rknpu_yolov8_file rknpu2/yolov8_rv1106_1103.cc)
+### end of zero-copy
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/allocator/dma)
 endif()
 
