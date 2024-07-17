@@ -54,6 +54,9 @@ int init_yolov8_model(const char *model_path, rknn_app_context_t *app_ctx)
         return -1;
     }
 
+    rknn_core_mask core_mask = RKNN_NPU_CORE_0_1_2;
+    ret = rknn_set_core_mask(ctx, core_mask);
+    rknn_set_batch_core_num(ctx, 3);
     // Get Model Input Output Number
     rknn_input_output_num io_num;
     ret = rknn_query(ctx, RKNN_QUERY_IN_OUT_NUM, &io_num, sizeof(io_num));
@@ -155,10 +158,10 @@ int release_yolov8_model(rknn_app_context_t *app_ctx)
     return 0;
 }
 
-int inference_yolov8_model(rknn_app_context_t *app_ctx, image_buffer_t *img, object_detect_result_list *od_results)
+int inference_yolov8_model(rknn_app_context_t *app_ctx, image_buffer_t *img, object_detect_result_list *od_results, image_buffer_t *dst_img)
 {
     int ret;
-    image_buffer_t dst_img;
+    // image_buffer_t dst_img;
     letterbox_t letter_box;
     rknn_input inputs[app_ctx->io_num.n_input];
     rknn_output outputs[app_ctx->io_num.n_output];
@@ -170,28 +173,41 @@ int inference_yolov8_model(rknn_app_context_t *app_ctx, image_buffer_t *img, obj
     {
         return -1;
     }
-
+        
     memset(od_results, 0x00, sizeof(*od_results));
     memset(&letter_box, 0, sizeof(letterbox_t));
-    memset(&dst_img, 0, sizeof(image_buffer_t));
     memset(inputs, 0, sizeof(inputs));
     memset(outputs, 0, sizeof(outputs));
 
     // Pre Process
-    dst_img.width = app_ctx->model_width;
-    dst_img.height = app_ctx->model_height;
-    dst_img.format = IMAGE_FORMAT_RGB888;
-    dst_img.size = get_image_size(&dst_img);
-    // dst_img.virt_addr = (unsigned char *)malloc(dst_img.size);
-    set_image_dma_buf_alloc(&dst_img);
-    if (dst_img.virt_addr == NULL)
+    if (dst_img->virt_addr == NULL) {
+        memset(dst_img, 0, sizeof(image_buffer_t));
+        dst_img->width = app_ctx->model_width;
+        dst_img->height = app_ctx->model_height;
+        dst_img->format = IMAGE_FORMAT_RGB888;
+        dst_img->size = get_image_size(dst_img);
+        // dst_img.virt_addr = (unsigned char *)malloc(dst_img.size);
+        set_image_dma_buf_alloc(dst_img);
+    } else if (get_image_size(dst_img) != dst_img->size) {
+        image_dma_buf_free(dst_img);
+        dst_img->virt_addr = NULL;
+
+        memset(dst_img, 0, sizeof(image_buffer_t));
+        dst_img->width = app_ctx->model_width;
+        dst_img->height = app_ctx->model_height;
+        dst_img->format = IMAGE_FORMAT_RGB888;
+        dst_img->size = get_image_size(dst_img);
+
+        set_image_dma_buf_alloc(dst_img);
+    }
+    if (dst_img->virt_addr == NULL)
     {
-        printf("malloc buffer size:%d fail!\n", dst_img.size);
+        printf("malloc buffer size:%d fail!\n", dst_img->size);
         return -1;
     }
 
     // letterbox
-    ret = convert_image_with_letterbox(img, &dst_img, &letter_box, bg_color);
+    ret = convert_image_with_letterbox(img, dst_img, &letter_box, bg_color);
     if (ret < 0)
     {
         printf("convert_image_with_letterbox fail! ret=%d\n", ret);
@@ -203,13 +219,13 @@ int inference_yolov8_model(rknn_app_context_t *app_ctx, image_buffer_t *img, obj
     inputs[0].type = RKNN_TENSOR_UINT8;
     inputs[0].fmt = RKNN_TENSOR_NHWC;
     inputs[0].size = app_ctx->model_width * app_ctx->model_height * app_ctx->model_channel;
-    inputs[0].buf = dst_img.virt_addr;
+    inputs[0].buf = dst_img->virt_addr;
 
     ret = rknn_inputs_set(app_ctx->rknn_ctx, app_ctx->io_num.n_input, inputs);
     if (ret < 0)
     {
         printf("rknn_input_set fail! ret=%d\n", ret);
-        return -1;
+    return -1;
     }
 
     // Run
@@ -226,23 +242,27 @@ int inference_yolov8_model(rknn_app_context_t *app_ctx, image_buffer_t *img, obj
         outputs[i].index = i;
         outputs[i].want_float = (!app_ctx->is_quant);
     }
-    
+
     ret = rknn_outputs_get(app_ctx->rknn_ctx, app_ctx->io_num.n_output, outputs, NULL);
     if (ret < 0)
     {
         printf("rknn_outputs_get fail! ret=%d\n", ret);
         goto out;
     }
+
     // Post Process
     post_process(app_ctx, outputs, &letter_box, box_conf_threshold, nms_threshold, od_results);
+
     // Remeber to release rknn output
     rknn_outputs_release(app_ctx->rknn_ctx, app_ctx->io_num.n_output, outputs);
+
 out:
-    if (dst_img.virt_addr != NULL)
+    if (dst_img->virt_addr != NULL)
     {
+        // image_dma_buf_free(dst_img);
+        // dst_img->virt_addr = NULL;
         // free(dst_img.virt_addr);
-        image_dma_buf_free(&dst_img);
-        dst_img.virt_addr = NULL;
     }
+
     return ret;
 }

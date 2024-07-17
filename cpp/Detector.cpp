@@ -3,28 +3,24 @@
 Detector* Detector::m_pInstance = nullptr;
 
 Detector::Detector() {}
-
+// 释放资源
 Detector::~Detector() {
-    rknn_perf_detail perf_detail;
-    ret = rknn_query(rknn_app_ctx.rknn_ctx, RKNN_QUERY_PERF_DETAIL, &perf_detail, sizeof(perf_detail));
-    printf("---> %s\n", perf_detail.perf_data);
-
     release();
     if (m_pInstance != nullptr) {
         delete m_pInstance;
     }
     m_pInstance = nullptr;
 }
-
+// 初始化，输入权重模型路径名称，加载模型
 bool Detector::init(const char* model_path) {
     memset(&rknn_app_ctx, 0, sizeof(rknn_app_context_t));
-
+    // 读取Label文件
     ret = init_post_process();
     if (ret != 0) {
         printf("init_post_process fail! ret=%d model_path=%s\n", ret, model_path);
         return false;
     }
-
+    // 初始化SDK，查询模型输入输出信息
     ret = init_yolov8_model(model_path, &rknn_app_ctx);
     if (ret != 0)
     {
@@ -32,7 +28,7 @@ bool Detector::init(const char* model_path) {
         release();
         return false;
     }
-
+    // 初始化输入图像
     memset(&src_image, 0, sizeof(image_buffer_t));
     return true;
 }
@@ -40,7 +36,7 @@ bool Detector::init(const char* model_path) {
 bool Detector::deinit() {
     release();
 }
-
+// 释放传输到外部的检测结果资源
 void resetStDetectResult(stDetectResult &result) {
     if (result.nDetectNum == 0) return;
     result.nDetectNum = 0;
@@ -48,12 +44,14 @@ void resetStDetectResult(stDetectResult &result) {
     delete []result.pProb;
     delete []result.pClasses;
 }
-
+// 复制图像数据到输入图像结构
 bool Detector::copyImageData(char* pChar, int nWidth, int nHeight, image_buffer_t& image) {
     int sw_out_size = nWidth * nHeight * 3;
     unsigned char* sw_out_buf = image.virt_addr;
     if (sw_out_buf == NULL) {
+        printf("copyImageData malloc %d\n", sw_out_size);
         sw_out_buf = (unsigned char*)malloc(sw_out_size * sizeof(unsigned char));
+        // set_image_dma_buf_alloc(&image);
     }
     if (sw_out_buf == NULL) {
         printf("sw_out_buf is NULL\n");
@@ -70,24 +68,25 @@ bool Detector::copyImageData(char* pChar, int nWidth, int nHeight, image_buffer_
 
     return true;
 }
-
+// 检测，输入图像数据及图像宽高，输出检测信息
 stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
     bool suc = copyImageData(pChar, nWidth, nHeight, src_image);
     if (!suc) {
         return &stResult;
     }
-
-    ret = inference_yolov8_model(&rknn_app_ctx, &src_image, &od_results);
+    // 检测及后处理
+    ret = inference_yolov8_model(&rknn_app_ctx, &src_image, &od_results, &dst_img);
     if (ret != 0)
     {
         printf("inference_yolov8_model fail! ret=%d\n", ret);
         return &stResult;
     }
+    // 填充传输到外部的检测结果
     resetStDetectResult(stResult);
     if (od_results.count > 0) {
         stResult.nDetectNum = od_results.count;
         stResult.pClasses = new int[od_results.count];
-        stResult.pBoxes = new int[od_results.count * 4];
+        stResult.pBoxes = new int[od_results.count << 2];
         stResult.pProb = new float[od_results.count];
     }
     // 画框和概率
@@ -117,7 +116,6 @@ stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
         stResult.pProb[i] = det_result->prop;
     }
     // write_image("out.png", &src_image);
-
     if (stResult.pFrame == nullptr) {
         stResult.pFrame = new unsigned char[src_image.size];
     }
@@ -125,14 +123,9 @@ stDetectResult* Detector::detect(char* pChar, int nWidth, int nHeight) {
     stResult.nWidth = src_image.width;
     stResult.nHeight = src_image.height;
 
-    // performance
-    // rknn_perf_detail perf_detail;
-    // ret = rknn_query(rknn_app_ctx.rknn_ctx, RKNN_QUERY_PERF_DETAIL, &perf_detail, sizeof(perf_detail));
-    // printf("---> %s\n", perf_detail.perf_data);
-
     return &stResult;
 }
-
+// 设置异步检测的回调函数 
 void Detector::setCallback(CBFun_Callback pFunc, void* pUser) {
     m_pCallback = pFunc;
     m_pUser = pUser;
@@ -145,7 +138,7 @@ void Detector::setCallback(CBFun_Callback pFunc, void* pUser) {
     }
     writeLog(pFunc == nullptr ? "setCallback pFunc is nullptr" : "setCallback");
 }
-
+// 异步检测
 void Detector::detectAsync(char* pChar, int nWidth, int nHeight) {
     if (output_images.empty()) {
         image_buffer_t image;
@@ -197,15 +190,14 @@ void Detector::threadLoop(std::future<void> exitListener) {
             image = input_images.front();
             input_images.pop();
         }
-        writeLog("threadLoop ");
 
-        ret = inference_yolov8_model(&rknn_app_ctx, &image, &od_results);
+        ret = inference_yolov8_model(&rknn_app_ctx, &image, &od_results, &dst_img);
         if (ret != 0)
         {
             printf("inference_yolov8_model fail! ret=%d\n", ret);
             continue;
         }
-        printf("resetStDetectResult \n");
+        
         resetStDetectResult(stResult);
         if (od_results.count > 0) {
             stResult.nDetectNum = od_results.count;
@@ -248,17 +240,29 @@ void Detector::threadLoop(std::future<void> exitListener) {
         stResult.nWidth = image.width;
         stResult.nHeight = image.height;
 
-        // performance
-        // rknn_perf_detail perf_detail;
-        // ret = rknn_query(rknn_app_ctx.rknn_ctx, RKNN_QUERY_PERF_DETAIL, &perf_detail, sizeof(perf_detail));
-        // printf("---> %s\n", perf_detail.perf_data);  
-        
         if (m_pCallback != nullptr) {
             m_pCallback(&stResult, nullptr);
         }
     } while (exitListener.wait_for(std::chrono::microseconds(1)) == std::future_status::timeout);
 }
-
+// 设置目标检测置信度阈值，即时生效 
+void Detector::setThreshold(float threshold) {
+    printf("setThreshold %f\n", threshold);
+    BOX_THRESH = threshold;
+}
+// 设置模型对应的目标总类型数
+void Detector::setClassNum(int nClassNum) {
+    printf("setClassNum %d\n", nClassNum);
+    OBJ_CLASS_NUM = nClassNum;
+}
+// 打印性能统计信息到控制台
+void Detector::printProfile() {
+    // performance
+    rknn_perf_detail perf_detail;
+    ret = rknn_query(rknn_app_ctx.rknn_ctx, RKNN_QUERY_PERF_DETAIL, &perf_detail, sizeof(perf_detail));
+    printf("---> %s\n", perf_detail.perf_data);  
+}
+// 写日志到文件
 void Detector::writeLog(const std::string& sMsg) {
     std::ofstream off("liblog.txt", std::ios::app);
     off << sMsg << std::endl;
