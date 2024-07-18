@@ -19,7 +19,7 @@ class RknnThreadPool():
         return RknnThreadPool._instance
     
     def __init__(self):
-        self.num_model = 3
+        self.num_model = 1
         self.queue = Queue()
         self.num = 0
         self.co_helper = letterBox #Simple_COCO_test_helper(enable_letter_box=True)
@@ -57,7 +57,7 @@ class RknnThreadPool():
         if isinstance(models, list): 
             rknns = []
             for model_path in models:
-                model_path = os.path.dirname(os.path.abspath(__file__)) + model_path
+                # model_path = os.path.dirname(os.path.abspath(__file__)) + model_path
                 model_name = model_path.rsplit('.', 1)[0] + '.onnx'
                 rknn = RKNN()
                 rknn.config(mean_values=[128, 128, 128], std_values=[128, 128, 128], 
@@ -85,7 +85,7 @@ class RknnThreadPool():
             return rknns
         else:
             rknn = RKNN()
-            models = os.path.dirname(os.path.abspath(__file__)) + models
+            # models = os.path.dirname(os.path.abspath(__file__)) + models
             model_name = models.rsplit('.', 1)[0] + '.onnx'
             rknn.config(mean_values=[128, 128, 128], std_values=[128, 128, 128], 
                         quant_img_RGB2BGR = True, 
@@ -138,12 +138,107 @@ class RknnThreadPool():
     
 rknnThreadPool = RknnThreadPool()
 
-if __name__ == '__main__':
+def img_check(path):
+    img_type = ['.jpg', '.jpeg', '.png', '.bmp']
+    for _type in img_type:
+        if path.endswith(_type) or path.endswith(_type.upper()):
+            return True
+    return False
+
+def transforLabelStr(labels):
+    labels = labels.split(' ')
+    labels[0] = int(labels[0])
+    labels[1] = float(labels[1])
+    labels[2] = float(labels[2])
+    labels[3] = float(labels[3])
+    labels[4] = float(labels[4])
+    # labels[5] = float(labels[5])
+    return labels
+
+def detectImageFolder(model_name = 'yolov8n.onnx', 
+                      image_folder = './dataset/images/'):
     from Postprocess import postprocess
     import cv2
-    numThread = 3
-    rknnThreadPool.startThreads('/../data/yolov8n.onnx', numThread, postprocess.detect_frame)
-    cap = cv2.VideoCapture('../data/video.avi')
+    numThread = 1
+    rknnThreadPool.startThreads(model_name, numThread, postprocess.detect_frame)
+    file_list = sorted(os.listdir(image_folder))
+
+    total = 0
+    correct = 0
+    wrong = 0
+    miss = 0
+
+    for path in file_list:
+        if img_check(path):
+            frame = cv2.imread(image_folder + '/' + path)
+
+            label_name = './dataset/labels/' + path.rsplit('.', 1)[0] + '.txt'
+            if not os.path.exists(label_name):
+                continue
+
+            infos = []
+            with open(label_name, "r") as f:
+                ground_trues = f.readlines()
+                for ground_true in ground_trues:
+                    trues = transforLabelStr(ground_true)
+                    infos.append(trues)
+                f.close()
+
+            rknnThreadPool.put(frame)
+            data, suc = rknnThreadPool.get()
+            if suc == False:
+                continue
+
+            for info in infos:
+                box = info[1:]
+                box[0] *= 1920
+                box[1] *= 1080
+                box[2] *= 1920
+                box[3] *= 1080
+                box[2] += box[0]
+                box[3] += box[1]
+
+                postprocess.draw(data[0], [box], [1.0], [info[0]], color = (0, 255, 0))
+
+            cv2.imshow('result', data[0])
+            cv2.waitKey(1)
+
+            total += len(infos)
+            detectCorrect = 0
+            if data[1] is not None:
+                classes = data[1]
+                boxes = data[2]
+                probs = data[3]
+                detectNum = len(boxes)
+
+                for (cls, box, prob) in zip(classes, boxes, probs):
+                    wrongFlag = True
+                    centerx = (box[0] + box[2]) / 2.0
+                    centery = (box[1] + box[3]) / 2.0
+                    for info in infos:
+                        if info[0] != cls:
+                            continue
+                        ctnx = info[1] * 1920
+                        ctny = info[2] * 1080
+                        if (centerx - ctnx) < 15 and (centery - ctny) < 15:
+                            correct += 1
+                            detectCorrect += 1
+                            wrongFlag = False
+                            break
+                    if wrongFlag == True:
+                        wrong += 1
+                miss += (len(infos) - detectCorrect)
+                correct += detectCorrect
+    print('detect result: ', total, correct, miss, wrong)
+    rknnThreadPool.stopThreads()
+
+def detectVideo(model_name = 'yolov8n.onnx', 
+                video_name = '1920_test.mp4'):
+    from Postprocess import postprocess
+    import cv2
+    numThread = 1
+    rknnThreadPool.startThreads(model_name, numThread, postprocess.detect_frame)
+    cap = cv2.VideoCapture(video_name)
     print('open video ', cap.isOpened())
     count = 0
     while cap.isOpened():
@@ -151,7 +246,7 @@ if __name__ == '__main__':
         if ret:
             rknnThreadPool.put(frame)
 
-            if count < numThread:
+            if count < numThread - 1:
                 count += 1
                 continue
             data, suc = rknnThreadPool.get()
@@ -160,4 +255,7 @@ if __name__ == '__main__':
             cv2.imshow('result', data[0])
             cv2.waitKey(1)
     rknnThreadPool.stopThreads()
+
+if __name__ == '__main__':
+    detectImageFolder()
     

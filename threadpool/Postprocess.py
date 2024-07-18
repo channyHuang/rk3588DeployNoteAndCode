@@ -208,7 +208,7 @@ class Postprocess():
 
         outputs = rknn.inference(inputs = [image_data])#[img])#, data_format = 'nchw')  
         boxes, classes, scores = Postprocess.post_process(outputs)
-        if drawed:
+        if drawed == True:
             if boxes is not None:
                 Postprocess.draw(img_src, letterBox.get_real_box(boxes), scores, classes)
             return img_src, classes, boxes, scores
