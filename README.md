@@ -8,6 +8,42 @@ Deploy in rk3588 with yolo model notes and codes
 
 [代码](https://github.com/channyHuang/rk3588DeployNoteAndCode)
 
+rk3588部署笔记
+
+# 环境篇
+## 官网
+1. [YOLOv8](https://github.com/ultralytics/ultralytics) 
+参考，main.py可用于验证onnx的检测结果
+2. [ultralytics_yolov8](https://github.com/airockchip/ultralytics_yolov8.git) 
+rknn的pt到onnx的转换代码
+3. [rknn_model_zoo](https://github.com/airockchip/rknn_model_zoo) 部署到rk3588的样例
+
+## pt转换成rknn
+1. 使用`ultralytics_yolov8`把pt转换成onnx，其中`cfg/default.yaml`中修改模型路径、输入尺寸等参数
+```sh
+export PYTHONPATH=./
+python ./ultralytics/engine/exporter.py
+```
+
+在`cfg/default.yaml`中修改参数，主要修改pt模型路径`model`和尺寸`imgsz`
+```yaml
+......
+model: /home/channy/Desktop/yolov8n.pt
+......
+imgsz: 1920 
+......
+```
+
+2. 使用`rknn_model_zoo`把onnx转换成rknn
+```sh
+./rknn_model_zoo/examples/yolov8/python
+```
+执行该路径下的`convert.py`进行转换，其中参数为:onnx模型、`rk3588`、int化（选`i8`或`fp`）、输出路径，具体样例为
+```sh
+python3 convert.py ~/Desktop/yolov8n.onnx rk3588 i8 ~/Desktop/yolov8n.rknn
+```
+
+最终会在输出目录下生成`rknn`文件
 
 ## C++检测库
 ### 基本库文件
