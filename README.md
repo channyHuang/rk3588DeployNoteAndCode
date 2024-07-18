@@ -75,3 +75,6 @@ python3 convert.py ~/Desktop/yolov8n.onnx rk3588 i8 ~/Desktop/yolov8n.rknn
 | 4 | setThreshold | (float fThreshold) | - | 设置阈值，即时生效 |
 | 5 | setClassNum | (int nClassNum) | - | 设置模型能检测的目标总数 |
 | 6 | printProfile | - | - | 打印性能统计信息到控制台 | 
+
+# 文件说明
+detect_rknn_board.py 检测模型在板上的推理正确率
